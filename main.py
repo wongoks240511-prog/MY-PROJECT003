@@ -2,95 +2,121 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-# --- 페이지 설정 ---
-st.set_page_config(page_title="주민등록 인구 및 세대 현황 대시보드", layout="wide")
-st.title("📊 주민등록 인구 및 세대 현황 시각화 대시보드 (Plotly 버전)")
-
-# --- 데이터 불러오기 ---
+# -----------------------------
+# ✅ 데이터 로드 및 전처리
+# -----------------------------
 @st.cache_data
 def load_data():
-    df = pd.read_csv("202509_202509_주민등록인구및세대현황_월간.csv", encoding="utf-8")
+    # CSV 불러오기 (NaN 처리 포함)
+    df = pd.read_csv("countriesMBTI_16types.csv", na_values=["", "NaN", "n/a", "%"])
+
+    # 숫자형으로 변환 (비숫자 값은 NaN)
+    for col in df.columns[1:]:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+        df[col] = (df[col] * 100).round(2)
+
     return df
 
-try:
-    df = load_data()
-except Exception as e:
-    st.error(f"CSV 파일을 불러오는 중 오류 발생: {e}")
-    st.stop()
+# 데이터 로드
+df = load_data()
 
-# --- 데이터 확인 ---
-st.subheader("데이터 미리보기")
-st.dataframe(df.head())
+# -----------------------------
+# 🌟 제목 및 설명
+# -----------------------------
+st.header("🧑🏻‍💻 서울고 석리송 선생님과 함께하는! 👩🏻‍💻")
+st.title("🌍 국가별 MBTI 성향 분석 프로젝트 🔍")
 
-st.subheader("데이터 기본 정보")
-st.write(df.describe(include='all'))
-
-# --- 주요 컬럼 식별 ---
-cols = df.columns.tolist()
-region_col = None
-
-for c in cols:
-    if "행정구역" in c or "지역" in c:
-        region_col = c
-        break
-
-if not region_col:
-    region_col = st.selectbox("지역(행정구역) 컬럼을 선택하세요:", cols)
-
-numeric_cols = df.select_dtypes(include=["int64", "float64"]).columns.tolist()
-if not numeric_cols:
-    st.warning("수치형 컬럼이 없습니다. CSV 파일 구조를 확인해주세요.")
-    st.stop()
-
-# --- 지역 선택 ---
-regions = st.multiselect("시각화할 지역을 선택하세요:", df[region_col].unique(), default=df[region_col].unique()[:5])
-filtered_df = df[df[region_col].isin(regions)]
-
-# --- 지표 선택 ---
-target_col = st.selectbox("시각화할 지표(예: 총인구수, 세대수 등)", numeric_cols)
-
-# --- 1️⃣ 막대 그래프 (지역별 인구 비교) ---
-st.subheader("📍 지역별 인구 비교")
-bar_fig = px.bar(
-    filtered_df,
-    x=region_col,
-    y=target_col,
-    color=region_col,
-    text=target_col,
-    title=f"지역별 {target_col} 비교",
+st.markdown(
+    "📊 **데이터 출처**: [Kaggle - MBTI Types by Country](https://www.kaggle.com/datasets/yamaerenay/mbtitypes-full/data)",
+    help="MBTI 유형의 국가별 분포 데이터를 Kaggle에서 가져왔습니다."
 )
-bar_fig.update_traces(texttemplate='%{text:,}', textposition='outside')
-st.plotly_chart(bar_fig, use_container_width=True)
 
-# --- 2️⃣ 시계열(월별/연도별) 그래프 ---
-date_cols = [c for c in cols if "년" in c or "월" in c or "기간" in c]
-if date_cols:
-    date_col = st.selectbox("기간(연도/월) 컬럼을 선택하세요:", date_cols)
-    st.subheader("📆 기간별 추이")
-    line_fig = px.line(
-        filtered_df,
-        x=date_col,
-        y=target_col,
-        color=region_col,
-        markers=True,
-        title=f"{target_col} 기간별 추이",
-    )
-    st.plotly_chart(line_fig, use_container_width=True)
+# -----------------------------
+# 🌏 국가 선택
+# -----------------------------
+global_mbti_types = sorted(set(df.columns) - {"Country"})
+country = st.selectbox("🌏 국가를 선택하세요:", df["Country"].dropna().unique())
 
-# --- 3️⃣ 성별 인구 비교 (선택적으로 표시) ---
-gender_cols = [c for c in cols if "남" in c or "여" in c]
-if len(gender_cols) >= 2:
-    st.subheader("👫 성별 인구 비교")
-    gender_data = filtered_df[[region_col] + gender_cols].melt(id_vars=region_col, var_name="성별", value_name="인구수")
-    gender_fig = px.bar(
-        gender_data,
-        x=region_col,
-        y="인구수",
-        color="성별",
-        barmode="group",
-        text="인구수",
-        title="성별 인구 비교",
-    )
-    st.plotly_chart(gender_fig, use_container_width=True)
+# -----------------------------
+# 📊 선택한 국가의 MBTI 분포
+# -----------------------------
+st.subheader(f"📊 {country}의 MBTI 분포")
 
-st.success("✅ Plotly 기반 시각화 완료!")
+selected_data = df[df["Country"] == country].iloc[:, 1:].T
+selected_data.columns = [country]
+selected_data = selected_data.sort_values(by=country, ascending=False)
+
+fig = px.bar(
+    selected_data,
+    x=selected_data.index,
+    y=country,
+    text=selected_data[country],
+    title=f"{country}의 MBTI 분포",
+    labels={country: "비율 (%)"},
+    hover_data={country: ":,.2f"},
+    color=selected_data.index,
+    color_discrete_sequence=px.colors.qualitative.Pastel
+)
+st.plotly_chart(fig)
+
+# -----------------------------
+# 🌐 전체 국가 평균 MBTI 분포
+# -----------------------------
+st.subheader("📊 전체 국가의 MBTI 평균 비율")
+
+mbti_avg = df.iloc[:, 1:].mean().sort_values(ascending=False)
+mbti_avg_df = pd.DataFrame({"MBTI": mbti_avg.index, "비율 (%)": mbti_avg.values})
+
+fig_avg = px.bar(
+    mbti_avg_df,
+    x="MBTI",
+    y="비율 (%)",
+    text="비율 (%)",
+    title="전체 국가별 MBTI 평균",
+    labels={"비율 (%)": "평균 비율 (%)"},
+    hover_data={"비율 (%)": ":,.2f"},
+    color="MBTI",
+    color_discrete_sequence=px.colors.qualitative.Pastel
+)
+st.plotly_chart(fig_avg)
+
+# -----------------------------
+# 🏆 MBTI 유형별 상위 10개국 + 한국
+# -----------------------------
+target_mbti = st.selectbox("💡 MBTI 유형을 선택하세요:", global_mbti_types)
+st.subheader(f"🏆 {target_mbti} 비율이 높은 국가 TOP 10 & 한국")
+
+if target_mbti in df.columns:
+    try:
+        top_10 = df.nlargest(10, target_mbti)[["Country", target_mbti]].copy()
+        korea_value = (
+            df[df["Country"] == "South Korea"][target_mbti].values[0]
+            if "South Korea" in df["Country"].values
+            else None
+        )
+
+        # 한국 데이터 추가
+        if korea_value is not None:
+            korea_data = pd.DataFrame({"Country": ["South Korea"], target_mbti: [korea_value]})
+            top_10 = pd.concat([top_10, korea_data])
+
+        top_10 = top_10.sort_values(by=target_mbti, ascending=False)
+
+        fig_top = px.bar(
+            top_10,
+            x="Country",
+            y=target_mbti,
+            text=target_mbti,
+            color="Country",
+            color_discrete_map={"South Korea": "red"},
+            title=f"{target_mbti} 비율 TOP 10 & 한국",
+            labels={target_mbti: "비율 (%)"},
+            hover_data={target_mbti: ":,.2f"},
+            color_discrete_sequence=px.colors.qualitative.Pastel
+        )
+        st.plotly_chart(fig_top)
+
+    except Exception as e:
+        st.error(f"데이터를 불러오는 중 오류 발생: {e}")
+else:
+    st.error("선택한 MBTI 유형이 데이터에 존재하지 않습니다.")
